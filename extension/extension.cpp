@@ -385,7 +385,7 @@ bool Connect::SDK_OnMetamodLoad(ISmmAPI *ismm, char *error, size_t maxlen, bool 
 {
 	GET_V_IFACE_CURRENT(GetEngineFactory, g_pCVar, ICvar, CVAR_INTERFACE_VERSION);
 
-	ConVar_Register(0, this);
+	META_REGCVAR(&connectVersion);
 
 	return true;
 }
