@@ -21,7 +21,9 @@
 #include "CDetour/detours.h"
 
 #include "steam/steamclientpublic.h"
+#include <safetyhook.hpp>
 #include <string>
+#include <utility>
 
 Connect g_connect;
 
@@ -177,12 +179,14 @@ CSteam3Server *Steam3Server()
 	return g_pSteam3ServerFunc();
 }
 
-SH_DECL_MANUALHOOK3(MHook_BeginAuthSession, 0, 0, 0, EBeginAuthSessionResult, const void *, int, CSteamID);
-EBeginAuthSessionResult Hook_BeginAuthSession(const void *pAuthTicket, int cbAuthTicket, CSteamID steamID)
+safetyhook::VmtHook g_SteamGameServerVmtHook;
+safetyhook::VmHook g_BeginAuthSessionHook;
+
+EBeginAuthSessionResult Hook_BeginAuthSession(ISteamGameServer *thisptr, const void *pAuthTicket, int cbAuthTicket, CSteamID steamID)
 {
 	if (!g_bSuppressBeginAuthSession)
 	{
-		RETURN_META_VALUE(MRES_IGNORED, k_EBeginAuthSessionResultOK);
+		return g_pBeginAuthSession(thisptr, pAuthTicket, cbAuthTicket, steamID);
 	}
 	g_bSuppressBeginAuthSession = false;
 
@@ -190,12 +194,10 @@ EBeginAuthSessionResult Hook_BeginAuthSession(const void *pAuthTicket, int cbAut
 	&& g_lastAuthTicket == pAuthTicket
 	&& g_lastcbAuthTicket == cbAuthTicket)
 	{
-		// Let the server know everything is fine
-		// g_pSM->LogMessage(myself, "You alright ;)");
-		RETURN_META_VALUE(MRES_SUPERCEDE, k_EBeginAuthSessionResultOK);
+		return k_EBeginAuthSessionResultOK;
 	}
 
-	RETURN_META_VALUE(MRES_IGNORED, k_EBeginAuthSessionResultDuplicateRequest);
+	return g_pBeginAuthSession(thisptr, pAuthTicket, cbAuthTicket, steamID);
 }
 
 DETOUR_DECL_MEMBER9(CBaseServer__ConnectClient, IClient*, netadr_t&, address, int, nProtocol, int, iChallenge, int, iClientChallenge, int, nAuthProtocol, const char *, pchName, const char *, pchPassword, const char *, pCookie, int, cbCookie)
@@ -340,12 +342,21 @@ bool Connect::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	}
 	g_pBeginAuthSession.SetAddress(vtable[offset]);
 
-	SH_MANUALHOOK_RECONFIGURE(MHook_BeginAuthSession, offset, 0, 0);
-	if (SH_ADD_MANUALHOOK(MHook_BeginAuthSession, g_pSteam3Server->m_pSteamGameServer, SH_STATIC(Hook_BeginAuthSession), true) == 0)
+	auto vmtHook = safetyhook::VmtHook::create(g_pSteam3Server->m_pSteamGameServer);
+	if (!vmtHook)
 	{
-		snprintf(error, maxlen, "Failed to setup ISteamGameServer__BeginAuthSession hook.\n");
+		snprintf(error, maxlen, "Failed to create ISteamGameServer VMT hook.\n");
 		return false;
 	}
+	g_SteamGameServerVmtHook = std::move(*vmtHook);
+
+	auto vmHook = g_SteamGameServerVmtHook.hook_method(offset, &Hook_BeginAuthSession);
+	if (!vmHook)
+	{
+		snprintf(error, maxlen, "Failed to hook ISteamGameServer::BeginAuthSession.\n");
+		return false;
+	}
+	g_BeginAuthSessionHook = std::move(*vmHook);
 
 	offset = 0;
 	if (!g_pGameConf->GetOffset("ISteamGameServer__EndAuthSession", &offset) || offset == 0)
@@ -388,6 +399,9 @@ void Connect::SDK_OnUnload()
 
 bool Connect::SDK_OnMetamodUnload(char *error, size_t maxlen)
 {
+	g_BeginAuthSessionHook.reset();
+	g_SteamGameServerVmtHook.reset();
+
 	if (detourCBaseServer__ConnectClient)
 	{
 		detourCBaseServer__ConnectClient->DisableDetour();
