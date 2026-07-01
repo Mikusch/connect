@@ -13,6 +13,13 @@ jobs:
       matrix:
         python-version: ['3.14']
         os: [ubuntu-latest, windows-2022]
+        sm:
+          - label: sm1.13
+            sm_branch: master
+            mm_branch: master
+          - label: sm1.12
+            sm_branch: 1.12-dev
+            mm_branch: 1.12-dev
         include:
           - os: ubuntu-latest
             cc: clang-11
@@ -21,14 +28,12 @@ jobs:
             cc: msvc
       fail-fast: false
 
-    name: ${{ matrix.os }} - ${{ matrix.cc }}
+    name: ${{ matrix.os }} - ${{ matrix.cc }} - ${{ matrix.sm.label }}
     runs-on: ${{ matrix.os }}
 
     env:
       PROJECT: 'connect'
       SDKS: 'css hl2dm dods tf2'
-      MMSOURCE_VERSION: '1.12'
-      SOURCEMOD_VERSION: '1.12'
       CACHE_PATH: ${{ github.workspace }}/cache
     steps:
       - name: Concatenate SDK Names
@@ -57,7 +62,7 @@ jobs:
           cache-name: connect-cache
         with:
           path: ${{ env.CACHE_PATH }}
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-sm${{ env.SOURCEMOD_VERSION }}-mmsource${{ env.MMSOURCE_VERSION }}-${{ env.SDKS_KEY }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.sm.label }}-${{ env.SDKS_KEY }}
 
       - shell: bash
         name: Install dependencies
@@ -88,8 +93,8 @@ jobs:
               shallow_checkout "https://github.com/alliedmodders/hl2sdk" "${sdk}" "hl2sdk-${sdk}"
           done
           shallow_checkout "https://github.com/alliedmodders/ambuild" "master" "ambuild"
-          shallow_checkout "https://github.com/alliedmodders/sourcemod" "${{env.SOURCEMOD_VERSION}}-dev" "sourcemod"
-          shallow_checkout "https://github.com/alliedmodders/metamod-source/" "${{env.MMSOURCE_VERSION}}-dev" "metamod-source"
+          shallow_checkout "https://github.com/alliedmodders/sourcemod" "${{ matrix.sm.sm_branch }}" "sourcemod"
+          shallow_checkout "https://github.com/alliedmodders/metamod-source/" "${{ matrix.sm.mm_branch }}" "metamod-source"
           # But maybe others aren't (also probably unnecessary because git actions but paranoia)
           git config --global advice.detachedHead true
 
@@ -107,8 +112,6 @@ jobs:
               -e PLATFORM="$PLATFORM" \
               -e PROJECT=${{ env.PROJECT }} \
               -e SDKS="${{ env.SDKS }}" \
-              -e MMSOURCE_VERSION=${{ env.MMSOURCE_VERSION }} \
-              -e SOURCEMOD_VERSION=${{ env.MMSOURCE_SOURCEMOD_VERSION }} \
               -e CACHE_PATH=${{ env.CACHE_PATH }} \
               -e SDKS_KEY=${{ env.SDKS_KEY }} \
               -e CC=${{ matrix.cc }} \
@@ -125,7 +128,7 @@ jobs:
           fi
 
           FILENAME="$(cat build/includes/filename_versioning.txt)"
-          ZIP_FILENAME="${{ env.PROJECT }}-${FILENAME}-${PLATFORM,}.zip"
+          ZIP_FILENAME="${{ env.PROJECT }}-${FILENAME}-${{ matrix.sm.label }}-${PLATFORM,}.zip"
 
           echo "ZIP_FILENAME=${ZIP_FILENAME}" >> $GITHUB_ENV
 
