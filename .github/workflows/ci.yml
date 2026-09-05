@@ -22,8 +22,8 @@ jobs:
             mm_branch: 1.12-dev
         include:
           - os: ubuntu-latest
-            cc: clang-11
-            cxx: clang++-11
+            cc: clang
+            cxx: clang++
           - os: windows-2022
             cc: msvc
       fail-fast: false
@@ -118,7 +118,7 @@ jobs:
               -e CXX=${{ matrix.cxx }} \
               --mount type=bind,source=${{ env.CACHE_PATH }},target=${{ env.CACHE_PATH }} \
               --mount type=bind,source=$PWD,target=$PWD \
-              "registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest" \
+              "ghcr.io/alliedmodders/build-containers/debian11-clang22:latest" \
               "$PWD/.github/workflows/build.sh"
 
             # need to fix the owner because docker root-ed stuff?
